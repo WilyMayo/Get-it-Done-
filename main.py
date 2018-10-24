@@ -1,4 +1,4 @@
-from flask import Flask, request, redirect, render_template
+from flask import Flask, request, redirect, render_template, session, flash
 from flask_sqlalchemy import SQLAlchemy
 
 
@@ -7,6 +7,7 @@ app.config['DEBUG'] = True
 app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://get-it-done:1234@localhost:3306/get-it-done'
 app.config['SQLALCHEMY_ECHO'] = True
 db = SQLAlchemy(app)
+app.secret_key = 'qqwwdfewfe123CbJ'
 
 
 class Task(db.Model):
@@ -14,11 +15,82 @@ class Task(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120))
     completed = db.Column(db.Boolean)
+    owner_id = db.Column(db.Integer, db.ForeignKey('user.id'))
 
 
-    def __init__(self, name):
+    def __init__(self, name, owner):
         self.name = name
-        self.completed = False 
+        self.completed = False
+        self.owner = owner 
+
+class User(db.Model):
+
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120), unique=True)
+    password = db.Column(db.String(120))
+    tasks = db.relationship('Task', backref='owner') 
+
+    def __init__(self, email , password):
+        self.email = email
+        self.password = password 
+
+@app.before_request         
+def request_login():
+    allowed_routes = ['login', 'register']
+    if request.endpoint not in allowed_routes and 'email' not in session:
+
+        return redirect('/login')
+
+
+@app.route('/login', methods=['POST', 'GET'])
+def login():
+    if request.method == 'POST':
+        email = request.form['email']
+        password = request.form['password']
+        user = User.query.filter_by(email=email).first()
+        if user and user.password == password:
+            session['email'] = email
+            flash("Logged in")
+            return redirect('/')
+        else:
+            flash('User password incorrect, or user does not exist')     
+
+    return render_template('login.html')
+
+
+
+@app.route('/register', methods=['POST','GET'])
+def register():
+    if request.method == 'POST':
+        email = request.form['email']
+        password = request.form['password']
+        verify = request.form['verify']
+               #validate user
+
+        existing_user = User.query.filter_by(email=email).first()
+        if not existing_user:
+            new_user = User(email, password)
+            db.session.add(new_user)
+            db.session.commit()
+            session['email'] = email
+            return  redirect('/')
+        else:
+            #user already have 
+            return '<h1> Duplicate user</h1>'
+
+
+
+
+           #validate user 
+
+
+    return render_template('register.html')        
+
+@app.route('/logout')
+def logout():
+    del session['email']
+    return redirect('/')
+
 
 
 @app.route('/', methods=['POST', 'GET'])
@@ -26,7 +98,8 @@ def index():
 
     if request.method == 'POST':
         task_name = request.form['task']
-        new_task = Task(task_name)
+        owner = User.query.filter_by(email=session['email']).first()
+        new_task = Task(task_name, owner)
         db.session.add(new_task)
         db.session.commit()
 
